@@ -14,6 +14,7 @@ import (
 	"github.com/hyperledger/fabric-protos-go/msp"
 	"github.com/hyperledger/fabric-protos-go/peer"
 	"github.com/hyperledger/fabric/common/tools/protolator"
+	"github.com/pkg/errors"
 )
 
 type cachedIdentity struct {
@@ -27,13 +28,13 @@ func getIdentity(serilizedIdentity []byte) (*cachedIdentity, error) {
 	sid := &msp.SerializedIdentity{}
 	err = proto.Unmarshal(serilizedIdentity, sid)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "error unmarshal SerializedIdentity")
 	}
 
 	var cert *x509.Certificate
 	cert, err = decodeX509Pem(sid.IdBytes)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "error decodeX509Pem")
 	}
 
 	return &cachedIdentity{
@@ -45,7 +46,7 @@ func getIdentity(serilizedIdentity []byte) (*cachedIdentity, error) {
 func decodeX509Pem(certPem []byte) (*x509.Certificate, error) {
 	block, _ := pem.Decode(certPem)
 	if block == nil {
-		return nil, fmt.Errorf("bad cert")
+		return nil, errors.New("error bad Certificate")
 	}
 
 	return x509.ParseCertificate(block.Bytes)
@@ -92,24 +93,24 @@ func ConvertEnvelopeToTXDetail(txFlag int32, env *common.Envelope) (*Transaction
 	payload, err := GetPayload(env)
 	if err != nil {
 		Log.Error(fmt.Sprintf("Unexpected error from unmarshal envelope: %s", err.Error()))
-		return nil, fmt.Errorf("unexpected error from unmarshal envelope: %s", err.Error())
+		return nil, errors.Wrap(err, "unexpected error from unmarshal envelope")
 	}
 
 	chdr, err := UnmarshalChannelHeader(payload.Header.ChannelHeader)
 	if err != nil {
 		Log.Error(fmt.Sprintf("Unexpected error from unmarshal channel header: %s", err.Error()))
-		return nil, fmt.Errorf("unexpected error from unmarshal channel header: %s", err.Error())
+		return nil, errors.Wrap(err, "unexpected error from unmarshal channel header")
 	}
 
 	shdr, err := GetSignatureHeader(payload.Header.SignatureHeader)
 	if err != nil {
 		Log.Error(fmt.Sprintf("Unexpected error from unmarshal signature header: %s", err.Error()))
-		return nil, fmt.Errorf("unexpected error from unmarshal signature header: %s", err.Error())
+		return nil, errors.Wrap(err, "unexpected error from unmarshal signature header")
 	}
 
 	identity, err := getIdentity(shdr.Creator)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "error getIdentity")
 	}
 
 	tx := &Transaction{
@@ -126,8 +127,8 @@ func ConvertEnvelopeToTXDetail(txFlag int32, env *common.Envelope) (*Transaction
 
 	hdrExt, err := GetChaincodeHeaderExtension(payload.Header)
 	if err != nil {
-		Log.Error(fmt.Sprintf("GetChaincodeHeaderExtension failed: %s", err.Error()))
-		return nil, fmt.Errorf("GetChaincodeHeaderExtension failed: %s", err.Error())
+		Log.Error(fmt.Sprintf("Unexpected error from GetChaincodeHeaderExtension: %s", err.Error()))
+		return nil, errors.Wrap(err, "unexpected error from GetChaincodeHeaderExtension")
 	}
 
 	if hdrExt.ChaincodeId != nil {
@@ -137,8 +138,8 @@ func ConvertEnvelopeToTXDetail(txFlag int32, env *common.Envelope) (*Transaction
 	//fetch the endorsers from the envelope
 	chaincodeProposalPayload, endorsements, chaincodeAction, err := parseChaincodeEnvelope(env)
 	if err != nil {
-		Log.Error(fmt.Sprintf("parseChaincodeEnvelope failed: %s", err.Error()))
-		return nil, fmt.Errorf("parseChaincodeEnvelope failed: %s", err.Error())
+		Log.Error(fmt.Sprintf("Unexpected error from parseChaincodeEnvelope: %s", err.Error()))
+		return nil, errors.Wrap(err, "unexpected error from parseChaincodeEnvelope")
 	}
 	distinctEndorser := map[string]bool{}
 	for _, e := range endorsements {
@@ -160,13 +161,13 @@ func ConvertEnvelopeToTXDetail(txFlag int32, env *common.Envelope) (*Transaction
 	cis := &peer.ChaincodeInvocationSpec{}
 	err = proto.Unmarshal(chaincodeProposalPayload.Input, cis)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "unexpected error from unmarshal ChaincodeInvocationSpec")
 	}
 	tx.Value = parseChaincodeInvocationSpec(cis)
 	reads, writes, err := parseChaincodeAction(chaincodeAction, tx.ChaincodeName)
 	if err != nil {
-		Log.Error(fmt.Sprintf("Failed to parse ChaincodeAction with error: %s", err.Error()))
-		return nil, fmt.Errorf("failed to parse ChaincodeAction with error: %s", err.Error())
+		Log.Error(fmt.Sprintf("Unexpected error from parse ChaincodeAction: %s", err.Error()))
+		return nil, errors.Wrap(err, "Unexpected error from parse ChaincodeAction")
 	}
 	tx.Value.Reads = reads
 	tx.Value.Writes = writes
@@ -177,8 +178,8 @@ func ConvertEnvelopeToTXDetail(txFlag int32, env *common.Envelope) (*Transaction
 	// 替代1.4.* GetMessageTree()，
 	err = protolator.DeepMarshalJSON(buf, env)
 	if err != nil {
-		Log.Error(fmt.Sprintf("Failed to unmarshal ConfigEnvelope caused by error %s", err.Error()))
-		return nil, fmt.Errorf("failed to unmarshal ConfigEnvelope caused by error %s", err.Error())
+		Log.Error(fmt.Sprintf("Unexpected error from unmarshal ConfigEnvelope caused by error %s", err.Error()))
+		return nil, errors.Wrap(err, "unexpected error from unmarshal ConfigEnvelope")
 	}
 	txDetail.Payload = buf.String()
 
@@ -190,30 +191,30 @@ func parseChaincodeEnvelope(env *common.Envelope) (*peer.ChaincodeProposalPayloa
 	payl, err := GetPayload(env)
 	if err != nil {
 		Log.Error(err.Error())
-		return nil, nil, nil, err
+		return nil, nil, nil, errors.Wrap(err, "unexpected error from GetPayload")
 	}
 
 	tx, err := GetTransaction(payl.Data)
 	if err != nil {
 		Log.Error(err.Error())
-		return nil, nil, nil, err
+		return nil, nil, nil, errors.Wrap(err, "unexpected error from GetTransaction")
 	}
 
 	if len(tx.Actions) == 0 {
 		Log.Error("At least one TransactionAction is required")
-		return nil, nil, nil, fmt.Errorf("at least one TransactionAction is required")
+		return nil, nil, nil, errors.Wrap(err, "at least one TransactionAction is required")
 	}
 
 	actionPayload, chaincodeAction, err := GetPayloads(tx.Actions[0])
 	if err != nil {
 		Log.Error(err.Error())
-		return nil, nil, nil, err
+		return nil, nil, nil, errors.Wrap(err, "unexpected error from GetPayloads")
 	}
 
 	chaincodeProposalPayload, err := GetChaincodeProposalPayload(actionPayload.ChaincodeProposalPayload)
 	if err != nil {
 		Log.Error(err.Error())
-		return nil, nil, nil, err
+		return nil, nil, nil, errors.Wrap(err, "unexpected error from GetChaincodeProposalPayload")
 	}
 
 	return chaincodeProposalPayload, actionPayload.Action.Endorsements, chaincodeAction, nil
@@ -240,7 +241,7 @@ func parseChaincodeAction(action *peer.ChaincodeAction, chaincodename string) ([
 	txRWSet := &rwset.TxReadWriteSet{}
 	err := proto.Unmarshal(resultBytes, txRWSet)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, errors.Wrap(err, "unexpected error from unmarshal TxReadWriteSet")
 	}
 
 	var kvRwSetByte []byte
@@ -253,7 +254,7 @@ func parseChaincodeAction(action *peer.ChaincodeAction, chaincodename string) ([
 	kvRWSet := &kvrwset.KVRWSet{}
 	err = proto.Unmarshal(kvRwSetByte, kvRWSet)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, errors.Wrap(err, "unexpected error from unmarshal KVRWSet")
 	}
 
 	return kvRWSet.Reads, kvRWSet.Writes, nil

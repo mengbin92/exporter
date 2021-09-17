@@ -39,7 +39,7 @@ func UnmarshalSignatureHeader(bytes []byte) (*common.SignatureHeader, error) {
 func GetChaincodeHeaderExtension(hdr *common.Header) (*peer.ChaincodeHeaderExtension, error) {
 	chdr, err := UnmarshalChannelHeader(hdr.ChannelHeader)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err,"error unmarshaling ChannelHeader when GetChaincodeHeaderExtension")
 	}
 
 	chaincodeHdrExt := &peer.ChaincodeHeaderExtension{}
